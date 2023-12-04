@@ -1,0 +1,50 @@
+---
+title: "DATA608 - Story 7"
+author: "Glen Dale Davis"
+date: "2023-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Packages
+
+```{r pacakages, warning = FALSE, message = FALSE}
+library(tidyverse)
+
+```
+
+### Data
+
+```{r data}
+my_url1 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/data/critical_minerals.csv"
+crit_min_df <- read.csv(my_url1)
+my_url2 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/data/MCS2023_Fig2_Net_Import_Reliance.csv"
+net_imp_rel_df <- read.csv(my_url2, encoding = "UTF-8")
+
+```
+
+```{r }
+existing <- c("ARSENIC,\\s*all\\s*forms", "GRAPHITE\\s*\\(NATURAL\\)",
+              "NIOBIUM\\s*\\(COLUMBIUM\\)", "TITANIUM,\\s*sponge",
+              "ANTIMONY,\\s*metal\\s*and\\s*oxide",
+              "TITANIUM\\s*MINERAL\\s*CONCENTRATES", "CHROMIUM,\\s*all\\s*forms ",
+              "TIN,\\s*refined", "ZINC,\\s*refined", "ALUMINUM", "ALUMINA",
+              "MAGNESIUM\\s*METAL", "MAGNESIUM\\s*COMPOUNDS",
+              "ZIRCONIUM,\\s*ores\\s*and\\s*concentrates")
+replacements <- c("ARSENIC", "GRAPHITE", "NIOBIUM", "TITANIUM (SPONGE)",
+                  "ANTIMONY", "TITANIUM (MINERAL CONCENTRATES)", "CHROMIUM",
+                  "TIN", "ZINC", "ALUMINUM (METAL)", "ALUMINUM (ALUMINA)",
+                  "MAGNESIUM (METAL)", "MAGNESIUM (COMPOUNDS)", "ZIRCONIUM")
+names(replacements) <- existing
+net_imp_rel_df <- net_imp_rel_df |>
+    mutate(Commodity = str_replace_all(Commodity, pattern = replacements))
+drop <- c("Source")
+main_df <- crit_min_df |>
+    left_join(net_imp_rel_df, by = join_by(IMPORTED_AS == Commodity)) |>
+    select(-all_of(drop))
+
+```
+
