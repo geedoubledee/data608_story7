@@ -13,38 +13,86 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r pacakages, warning = FALSE, message = FALSE}
 library(tidyverse)
+library(snakecase)
 
 ```
 
 ### Data
 
 ```{r data}
+#Critical minerals list
 my_url1 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/data/critical_minerals.csv"
 crit_min_df <- read.csv(my_url1)
+
+#Net import reliance
 my_url2 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/data/MCS2023_Fig2_Net_Import_Reliance.csv"
 net_imp_rel_df <- read.csv(my_url2, encoding = "UTF-8")
 
+#Minerals Security Partnership (MSP): 
+#https://www.state.gov/minerals-security-partnership/#:~:text=The%20United%20States%20was%20joined,bolster%20critical%20mineral%20supply%20chains.
+msp_sources <- c("Australia", "Canada", "Finland", "France", "Germany",
+                 "Japan", "Republic of Korea", "Sweden", "United Kingdom",
+                 "Europe")
+
+#Belt and Road Initiative (BRI):
+#https://greenfdc.org/countries-of-the-belt-and-road-initiative-bri/
+my_url3 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/data/BRI-countries.csv"
+bri_df <- read.csv(my_url3, skip = 3)
+colnames(bri_df) <- to_screaming_snake_case(colnames(bri_df))
+
 ```
 
-```{r }
-existing <- c("ARSENIC,\\s*all\\s*forms", "GRAPHITE\\s*\\(NATURAL\\)",
-              "NIOBIUM\\s*\\(COLUMBIUM\\)", "TITANIUM,\\s*sponge",
-              "ANTIMONY,\\s*metal\\s*and\\s*oxide",
-              "TITANIUM\\s*MINERAL\\s*CONCENTRATES", "CHROMIUM,\\s*all\\s*forms ",
-              "TIN,\\s*refined", "ZINC,\\s*refined", "ALUMINUM", "ALUMINA",
-              "MAGNESIUM\\s*METAL", "MAGNESIUM\\s*COMPOUNDS",
-              "ZIRCONIUM,\\s*ores\\s*and\\s*concentrates")
-replacements <- c("ARSENIC", "GRAPHITE", "NIOBIUM", "TITANIUM (SPONGE)",
-                  "ANTIMONY", "TITANIUM (MINERAL CONCENTRATES)", "CHROMIUM",
-                  "TIN", "ZINC", "ALUMINUM (METAL)", "ALUMINUM (ALUMINA)",
-                  "MAGNESIUM (METAL)", "MAGNESIUM (COMPOUNDS)", "ZIRCONIUM")
-names(replacements) <- existing
+```{r merge}
+rare_earths <- c("YTTERBIUM", "THULIUM", "TERBIUM", "SAMARIUM",
+                 "PRASEODYMIUM", "NEODYMIUM", "LUTETIUM", "LANTHANUM",
+                 "HOLMIUM", "GADOLINIUM", "EUROPIUM", "ERBIUM",
+                 "DYSPROSIUM", "CERIUM")
+plat_grp_metals <- c("IRIDIUM", "RHODIUM", "RUTHENIUM")
+missing <- c("BERYLLIUM", "HAFNIUM")
+patt <- c("ARSENIC,\\sall\\sforms", "GRAPHITE\\s\\(NATURAL\\)",
+              "NIOBIUM\\s\\(COLUMBIUM\\)", "TITANIUM,\\ssponge",
+              "ANTIMONY,\\smetal\\sand\\soxide",
+              "TITANIUM\\sMINERAL\\sCONCENTRATES", "CHROMIUM,\\sall\\sforms ",
+              "TIN,\\srefined", "ZINC,\\srefined", "ALUMINUM", "BAUXITE",
+              "ALUMINA", "MAGNESIUM\\sMETAL", "MAGNESIUM\\sCOMPOUNDS",
+              "ZIRCONIUM,\\sores\\sand\\sconcentrates",
+              "RARE\\sEARTHS,\\scompounds\\sand\\smetals,\\sincluding\\slanthanides")
+repl <- c("ARSENIC", "GRAPHITE", "NIOBIUM", "TITANIUM (SPONGE)",
+          "ANTIMONY", "TITANIUM (MINERAL CONCENTRATES)", "CHROMIUM",
+          "TIN", "ZINC", "ALUMINUM (METAL)", "ALUMINUM (BAUXITE)",
+          "ALUMINUM (ALUMINA)", "MAGNESIUM (METAL)", "MAGNESIUM (COMPOUNDS)",
+          "ZIRCONIUM", "RARE EARTHS")
+names(repl) <- patt
 net_imp_rel_df <- net_imp_rel_df |>
-    mutate(Commodity = str_replace_all(Commodity, pattern = replacements))
-drop <- c("Source")
+    mutate(Commodity = str_replace_all(Commodity, pattern = repl))
+drop <- c("Crit_Min", "crit_min", "Source", "Major_Import_Sources_2018_2021")
+new_cols <- c("Maj_Source_1", "Maj_Source_2", "Maj_Source_3", "Maj_Source_4")
 main_df <- crit_min_df |>
-    left_join(net_imp_rel_df, by = join_by(IMPORTED_AS == Commodity)) |>
-    select(-all_of(drop))
+    left_join(net_imp_rel_df, by = join_by(IMPORTED_AS == Commodity),
+              relationship = "many-to-one") |>
+    arrange(Import_Share_Rank, IMPORTED_AS, CRIT_MIN) |>
+    mutate(Maj_Sources = trimws(Major_Import_Sources_2018_2021)) |>
+    select(-all_of(drop)) |>
+    separate_wider_delim(Maj_Sources,
+                         delim = ", ", names = new_cols,
+                         too_few = "align_start", cols_remove = FALSE)
+colnames(main_df) <- to_screaming_snake_case(colnames(main_df))
+sources <- c(unique(c(main_df$MAJ_SOURCE_1, main_df$MAJ_SOURCE_2,
+                        main_df$MAJ_SOURCE_3, main_df$MAJ_SOURCE_4)))
+sources <- as.data.frame(sources[!is.na(sources)])
+colnames(sources) <- "Source"
+sources <- sources |>
+    arrange(Source)
+patt <- c("Russian Federation")
+repl <- c("Russia")
+names(repl) <- patt
+bri_df <- bri_df |>
+    mutate(COUNTRY = str_replace_all(COUNTRY, pattern = repl))
+bri_sources <- c(bri_df$COUNTRY, "China")
+sources <- sources |>
+    mutate(Category = case_when(Source %in% msp_sources ~ "Ally",
+                                Source %in% bri_sources ~ "Competitor",
+                                TRUE ~ "Neutral"))
 
 ```
 
