@@ -1,5 +1,6 @@
-﻿Crit_Min,CRIT_MIN,crit_min,SUBSET
-Aluminum,ALUMINUM,aluminum,ALUMINUM
+﻿Crit_Min,CRIT_MIN,crit_min,IMPORTED_AS
+Aluminum,ALUMINUM,aluminum,ALUMINUM (METAL)
+Aluminum,ALUMINUM,aluminum,ALUMINUM (ALUMINA)
 Antimony,ANTIMONY,antimony,ANTIMONY
 Arsenic,ARSENIC,arsenic,ARSENIC
 Barite,BARITE,barite,BARITE
@@ -24,7 +25,8 @@ Iridium,IRIDIUM,iridium,IRIDIUM
 Lanthanum,LANTHANUM,lanthanum,LANTHANUM
 Lithium,LITHIUM,lithium,LITHIUM
 Lutetium,LUTETIUM,lutetium,LUTETIUM
-Magnesium,MAGNESIUM,magnesium,MAGNESIUM
+Magnesium,MAGNESIUM,magnesium,MAGNESIUM (COMPOUNDS)
+Magnesium,MAGNESIUM,magnesium,MAGNESIUM (METAL)
 Manganese,MANGANESE,manganese,MANGANESE
 Neodymium,NEODYMIUM,neodymium,NEODYMIUM
 Nickel,NICKEL,nickel,NICKEL
