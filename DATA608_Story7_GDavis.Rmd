@@ -14,6 +14,16 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r pacakages, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(snakecase)
+library(RColorBrewer)
+library(janitor)
+
+```
+
+### Theme
+
+```{r theme}
+cur_theme <- theme_set(theme_classic())
+greys <- brewer.pal(n = 9, name = "Greys")
 
 ```
 
@@ -77,6 +87,25 @@ main_df <- crit_min_df |>
                          delim = ", ", names = new_cols,
                          too_few = "align_start", cols_remove = FALSE)
 colnames(main_df) <- to_screaming_snake_case(colnames(main_df))
+main_df$NET_IMP_REL_PCT <- main_df$NET_IMPORT_RELIANCE_PCT_2022
+main_df$NET_IMP_REL_PCT <- gsub(">95", "96", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub(">75", "76", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub(">50", "51", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub("<50", "49", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub(">25", "26", main_df$NET_IMP_REL_PCT)
+main_df <- main_df |>
+    select(-NET_IMPORT_RELIANCE_PCT_2022) |>
+    mutate(NET_IMP_REL_PCT = as.numeric(NET_IMP_REL_PCT),
+           DEPENDENCE = factor(case_when(NET_IMP_REL_PCT < 50 ~ "Medium",
+                                         NET_IMP_REL_PCT < 75 ~ "High",
+                                         NET_IMP_REL_PCT < 100 ~ "Very High",
+                                         TRUE ~ "Complete"),
+                               levels = c("Medium", "High",
+                                          "Very High", "Complete")))
+
+```
+
+```{r sources}
 sources <- c(unique(c(main_df$MAJ_SOURCE_1, main_df$MAJ_SOURCE_2,
                         main_df$MAJ_SOURCE_3, main_df$MAJ_SOURCE_4)))
 sources <- as.data.frame(sources[!is.na(sources)])
@@ -93,6 +122,82 @@ sources <- sources |>
     mutate(Category = case_when(Source %in% msp_sources ~ "Ally",
                                 Source %in% bri_sources ~ "Competitor",
                                 TRUE ~ "Neutral"))
+
+```
+
+```{r low_carbon_tech}
+low_carbon_tech <- matrix(c(1, 1, 0, 0, 0, 1, 1, 1, 1, 0,
+                            1, 0, 0, 1, 1, 1, 1, 1, 1, 1,
+                            0, 0, 0, 0, 0, 1, 0, 1, 1, 1,
+                            0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                            0, 1, 0, 0, 0, 0, 1, 0, 0, 0,
+                            0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                            1, 0, 0, 1, 1, 1, 0, 1, 1, 1,
+                            1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+                            0, 0, 0, 1, 1, 0, 1, 1, 1, 0,
+                            0, 0, 0, 0, 0, 1, 1, 1, 0, 0,
+                            1, 1, 0, 1, 0, 1, 1, 0, 0, 0),
+                          nrow = 12, ncol = 10, byrow = TRUE)
+rownames(low_carbon_tech) <- c("Aluminum", "Chromium", "Cobalt", "Graphite",
+                               "Indium", "Lithium", "Manganese", "Neodymium",
+                               "Nickel", "Titanium", "Vanadium", "Zinc")
+colnames(low_carbon_tech) <- c("Wind", "Solar Photovoltaic", "Concentrated Solar Power",
+                               "Hydro", "Geothermal", "Energy Storage", "Nuclear",
+                               "Coal", "Gas", "Carbon Capture and Storage")
+low_carbon_tech <- as.data.frame(t(low_carbon_tech))
+low_carbon_tech <- low_carbon_tech[, order(colSums(-low_carbon_tech))]
+low_carbon_tech$ROW_TOTAL <- rowSums(low_carbon_tech)
+low_carbon_tech <- low_carbon_tech |>
+    filter(ROW_TOTAL > 0) |>
+    rownames_to_column(var = "LOW_CARBON_TECHNOLOGY") |>
+    arrange(desc(ROW_TOTAL))
+skip <- c("LOW_CARBON_TECHNOLOGY", "ROW_TOTAL")
+sel <- c("CRIT_MIN", "DEPENDENCE")
+low_carbon_tech_piv <- low_carbon_tech |>
+    pivot_longer(cols = -all_of(skip), names_to = "x", values_to = "val") |>
+    group_by(x) |>
+    mutate(COL_TOTAL = sum(val)) |>
+    ungroup() |>
+    mutate(X = str_to_upper(x)) |>
+    left_join(main_df |> select(all_of(sel)),
+              by = join_by(X == CRIT_MIN),
+              relationship = "many-to-many",
+              multiple = "first")|>
+    select(-X)
+
+```
+
+```{r visualizations1}
+palette <- brewer.pal(n = 4, name = "OrRd")
+fil <- palette
+title_str <- "Low-Carbon Technologies Rely on Critical Minerals the US Is Very Highly or\nCompletely Dependent on Importing, Endangering a Clean Energy Transition"
+cap_str <- "https://www.worldbank.org/en/topic/extractiveindustries/brief/climate-smart-mining-minerals-for-climate-action"
+p1 <- low_carbon_tech_piv |>
+    filter(val == 1) |>
+    ggplot() +
+    geom_tile(aes(x = reorder(x, COL_TOTAL, decreasing = TRUE),
+                  y = reorder(LOW_CARBON_TECHNOLOGY, ROW_TOTAL),
+                  fill = DEPENDENCE),
+                  col = "white") +
+    scale_fill_manual(values = fil) +
+    labs(fill = "Dependence Level",
+         title = title_str,
+         caption = cap_str) +
+    theme(legend.position = "right",
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank())
+p1
+
+```
+
+```{r visualizations2}
+
 
 ```
 
