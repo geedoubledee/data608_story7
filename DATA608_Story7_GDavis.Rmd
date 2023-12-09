@@ -14,6 +14,16 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r pacakages, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(snakecase)
+library(RColorBrewer)
+library(janitor)
+
+```
+
+### Theme
+
+```{r theme}
+cur_theme <- theme_set(theme_classic())
+greys <- brewer.pal(n = 9, name = "Greys")
 
 ```
 
@@ -40,15 +50,22 @@ my_url3 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/d
 bri_df <- read.csv(my_url3, skip = 3)
 colnames(bri_df) <- to_screaming_snake_case(colnames(bri_df))
 
+my_url4 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/data/world_gov_ind_2018-2022.csv"
+world_gov_ind_df <- read.csv(my_url4)
+colnames(world_gov_ind_df) <- to_screaming_snake_case(colnames(world_gov_ind_df))
+
+my_url5 <- "https://raw.githubusercontent.com/geedoubledee/data608_story7/main/data/global_econ_prosp_2020-2025.csv"
+global_econ_prosp_df <- read.csv(my_url5)
+colnames(global_econ_prosp_df) <- to_screaming_snake_case(colnames(global_econ_prosp_df))
+
 ```
 
-```{r merge}
+```{r main_df}
 rare_earths <- c("YTTERBIUM", "THULIUM", "TERBIUM", "SAMARIUM",
                  "PRASEODYMIUM", "NEODYMIUM", "LUTETIUM", "LANTHANUM",
                  "HOLMIUM", "GADOLINIUM", "EUROPIUM", "ERBIUM",
                  "DYSPROSIUM", "CERIUM")
 plat_grp_metals <- c("IRIDIUM", "RHODIUM", "RUTHENIUM")
-missing <- c("BERYLLIUM", "HAFNIUM")
 patt <- c("ARSENIC,\\sall\\sforms", "GRAPHITE\\s\\(NATURAL\\)",
               "NIOBIUM\\s\\(COLUMBIUM\\)", "TITANIUM,\\ssponge",
               "ANTIMONY,\\smetal\\sand\\soxide",
@@ -77,6 +94,46 @@ main_df <- crit_min_df |>
                          delim = ", ", names = new_cols,
                          too_few = "align_start", cols_remove = FALSE)
 colnames(main_df) <- to_screaming_snake_case(colnames(main_df))
+# Missing info filled in:
+missing <- c("BERYLLIUM", "HAFNIUM")
+beryllium_row <- c("BERYLLIUM", "BERYLLIUM", NA, "<20", "Kazakhstan", "Japan", "Latvia",
+                   "Brazil", "Kazakhstan, Japan, Latvia, Brazil")
+hafnium_row <- c("HAFNIUM", "HAFNIUM", NA, NA, "Germany", "France", "China", "Russia",
+                 "Germany, France, China, Russia")
+missing_rows <- as.data.frame(rbind(beryllium_row, hafnium_row))
+rownames(missing_rows) <- NULL
+colnames(missing_rows) <- colnames(main_df)
+missing_rows$IMPORT_SHARE_RANK <- as.numeric(missing_rows$IMPORT_SHARE_RANK)
+main_df <- main_df |>
+    filter(!CRIT_MIN %in% missing) |>
+    bind_rows(missing_rows)
+main_df$NET_IMP_REL_PCT <- main_df$NET_IMPORT_RELIANCE_PCT_2022
+main_df$NET_IMP_REL_PCT <- gsub(">95", "96", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub(">75", "76", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub(">50", "51", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub("<50", "49", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub(">25", "26", main_df$NET_IMP_REL_PCT)
+main_df$NET_IMP_REL_PCT <- gsub("<20", "19", main_df$NET_IMP_REL_PCT)
+filt <- c("ALUMINUM (ALUMINA)", "ALUMINUM (BAUXITE)", "MAGNESIUM (COMPOUNDS)",
+         "TITANIUM (MINERAL CONCENTRATES)")
+main_df <- main_df |>
+    select(-NET_IMPORT_RELIANCE_PCT_2022) |>
+    mutate(NET_IMP_REL_PCT = as.numeric(NET_IMP_REL_PCT),
+           DEPENDENCE = factor(case_when(is.na(NET_IMP_REL_PCT) ~ NA,
+                                         NET_IMP_REL_PCT < 25 ~ "Low",
+                                         NET_IMP_REL_PCT < 50 ~ "Medium",
+                                         NET_IMP_REL_PCT < 75 ~ "High",
+                                         NET_IMP_REL_PCT < 100 ~ "Very High",
+                                         TRUE ~ "Complete"),
+                               levels = c("Low", "Medium", "High",
+                                          "Very High", "Complete"),
+                               exclude = NULL)) |>
+    arrange(IMPORT_SHARE_RANK, IMPORTED_AS, CRIT_MIN) |>
+    filter(!IMPORTED_AS %in% filt)
+
+```
+
+```{r sources}
 sources <- c(unique(c(main_df$MAJ_SOURCE_1, main_df$MAJ_SOURCE_2,
                         main_df$MAJ_SOURCE_3, main_df$MAJ_SOURCE_4)))
 sources <- as.data.frame(sources[!is.na(sources)])
@@ -96,3 +153,303 @@ sources <- sources |>
 
 ```
 
+```{r low_carbon_tech}
+low_carbon_tech <- matrix(c(1, 1, 0, 0, 0, 1, 1, 1, 1, 0,
+                            1, 0, 0, 1, 1, 1, 1, 1, 1, 1,
+                            0, 0, 0, 0, 0, 1, 0, 1, 1, 1,
+                            0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                            0, 1, 0, 0, 0, 0, 1, 0, 0, 0,
+                            0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+                            1, 0, 0, 1, 1, 1, 0, 1, 1, 1,
+                            1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+                            0, 0, 0, 1, 1, 0, 1, 1, 1, 0,
+                            0, 0, 0, 0, 0, 1, 1, 1, 0, 0,
+                            1, 1, 0, 1, 0, 1, 1, 0, 0, 0),
+                          nrow = 12, ncol = 10, byrow = TRUE)
+rownames(low_carbon_tech) <- c("Aluminum", "Chromium", "Cobalt", "Graphite",
+                               "Indium", "Lithium", "Manganese", "Neodymium",
+                               "Nickel", "Titanium", "Vanadium", "Zinc")
+colnames(low_carbon_tech) <- c("Wind", "Solar Photovoltaic", "Concentrated Solar Power",
+                               "Hydro", "Geothermal", "Energy Storage", "Nuclear",
+                               "Coal", "Gas", "Carbon Capture and Storage")
+low_carbon_tech <- as.data.frame(t(low_carbon_tech))
+low_carbon_tech <- low_carbon_tech[, order(colSums(-low_carbon_tech))]
+low_carbon_tech$ROW_TOTAL <- rowSums(low_carbon_tech)
+low_carbon_tech <- low_carbon_tech |>
+    filter(ROW_TOTAL > 0) |>
+    rownames_to_column(var = "LOW_CARBON_TECHNOLOGY") |>
+    arrange(desc(ROW_TOTAL))
+skip <- c("LOW_CARBON_TECHNOLOGY", "ROW_TOTAL")
+sel <- c("CRIT_MIN", "DEPENDENCE")
+low_carbon_tech_piv <- low_carbon_tech |>
+    pivot_longer(cols = -all_of(skip), names_to = "x", values_to = "val") |>
+    group_by(x) |>
+    mutate(COL_TOTAL = sum(val)) |>
+    ungroup() |>
+    mutate(X = str_to_upper(x)) |>
+    left_join(main_df |> select(all_of(sel)),
+              by = join_by(X == CRIT_MIN),
+              relationship = "many-to-many",
+              multiple = "first")|>
+    select(-X)
+
+```
+
+```{r visualizations1}
+palette <- brewer.pal(n = 4, name = "OrRd")
+fil <- palette
+title_str <- "Low-Carbon Technologies Rely on Critical Minerals the US Is Very Highly or\nCompletely Dependent on Importing, Endangering a Clean Energy Transition"
+cap_str <- "https://www.worldbank.org/en/topic/extractiveindustries/brief/climate-smart-mining-minerals-for-climate-action"
+p1 <- low_carbon_tech_piv |>
+    filter(val == 1) |>
+    ggplot() +
+    geom_tile(aes(x = reorder(x, COL_TOTAL, decreasing = TRUE),
+                  y = reorder(LOW_CARBON_TECHNOLOGY, ROW_TOTAL),
+                  fill = DEPENDENCE),
+                  col = "white") +
+    scale_fill_manual(values = fil) +
+    labs(fill = "Dependence Level",
+         title = title_str,
+         caption = cap_str) +
+    theme(legend.position = "right",
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank())
+p1
+
+```
+
+```{r sources_piv}
+drop <- c("CRIT_MIN")
+piv <- c("MAJ_SOURCE_1", "MAJ_SOURCE_2", "MAJ_SOURCE_3", "MAJ_SOURCE_4")
+sources_imported_as_piv <- main_df |>
+    select(-all_of(drop)) |>
+    distinct(IMPORTED_AS, .keep_all = TRUE) |>
+    pivot_longer(cols = all_of(piv), names_to = "src_rank", values_to = "src") |>
+    mutate(src_rank = as.numeric(str_replace_all(src_rank, "MAJ_SOURCE_", ""))) |>
+    left_join(sources, by = join_by(src == Source),
+              relationship = "many-to-one") |>
+    group_by(src) |>
+    mutate(src_count = n())
+drop <- c("IMPORTED_AS")
+sources_crit_min_piv <- main_df |>
+    select(-all_of(drop)) |>
+    distinct(CRIT_MIN, .keep_all = TRUE) |>
+    pivot_longer(cols = all_of(piv), names_to = "src_rank", values_to = "src") |>
+    mutate(src_rank = as.numeric(str_replace_all(src_rank, "MAJ_SOURCE_", ""))) |>
+    left_join(sources, by = join_by(src == Source),
+              relationship = "many-to-one") |>
+    group_by(src) |>
+    mutate(src_count = n())
+
+```
+
+```{r visualizations2}
+palette <- brewer.pal(n = 12, name = "Paired")
+fil <- c(palette[1], palette[7], greys[4])
+title_str <- "TK"
+cap_str <- "TK"
+p2 <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE == "Complete") |>
+    ggplot() +
+    geom_tile(aes(x = src_rank,
+                  y = IMPORTED_AS,
+                  fill = Category),
+                  col = "white") +
+    scale_fill_manual(values = fil) +
+    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
+    labs(title = title_str,
+         caption = cap_str) +
+    theme(legend.position = "top",
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank())
+p2
+p3 <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE == "Very High") |>
+    ggplot() +
+    geom_tile(aes(x = src_rank,
+                  y = IMPORTED_AS,
+                  fill = Category),
+                  col = "white") +
+    scale_fill_manual(values = fil) +
+    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
+    labs(title = title_str,
+         caption = cap_str) +
+    theme(legend.position = "top",
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank())
+p3
+p4 <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE == "High") |>
+    ggplot() +
+    geom_tile(aes(x = src_rank,
+                  y = IMPORTED_AS,
+                  fill = Category),
+                  col = "white") +
+    scale_fill_manual(values = fil) +
+    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
+    labs(title = title_str,
+         caption = cap_str) +
+    theme(legend.position = "top",
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank())
+p4
+p5 <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE == "Medium" | DEPENDENCE == "Low") |>
+    ggplot() +
+    geom_tile(aes(x = src_rank,
+                  y = IMPORTED_AS,
+                  fill = Category),
+                  col = "white") +
+    scale_fill_manual(values = fil) +
+    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
+    labs(title = title_str,
+         caption = cap_str) +
+    theme(legend.position = "top",
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank())
+p5
+
+```
+
+```{r key_stats_df}
+drop <- c("IMPORTED_AS")
+key_stats_df <- main_df |>
+    select(-all_of(drop)) |>
+    distinct(CRIT_MIN, .keep_all = TRUE) |>
+    group_by(DEPENDENCE) |>
+    summarize(dep_count = n()) |>
+    mutate(dep_total = sum(dep_count),
+           dep_percent = round(dep_count / dep_total * 100, 2)) |>
+    filter(DEPENDENCE == "Very High" | DEPENDENCE == "Complete")
+cols <- c("Stat", "count", "total", "percent")
+colnames(key_stats_df) <- cols
+key_stats_df <- key_stats_df |>
+    mutate(Stat = ifelse(Stat == "Very High", "Very High Dependence",
+                         "Complete Dependence"))
+key_stats_df[] <- lapply(key_stats_df, as.character)
+has_ally_source_df <- sources_crit_min_piv |>
+    filter(Category == "Ally")
+has_ally_source_vec <- unique(has_ally_source_df$CRIT_MIN)
+a <- c("Has Ally Source", "41", "50", as.character(round(41 / 50 * 100, 2)))
+b <- c("Has No Ally Source", "9", "50", as.character(round(9 / 50 * 100, 2)))
+new_rows <- as.data.frame(rbind(a, b))
+rownames(new_rows) <- NULL
+colnames(new_rows) <- cols
+src1_df <- sources_crit_min_piv |>
+    filter(src_rank == 1) |>
+    group_by(src) |>
+    summarize(src1_count = n()) |>
+    mutate(src1_total = sum(src1_count),
+           src1_percent = round(src1_count / src1_total * 100, 2)) |>
+    filter(src == "Canada" | src == "China") |>
+    mutate(src = ifelse(src == "Canada", "Canada Top Supplier",
+                         "China Top Supplier"))
+colnames(src1_df) <- cols
+src1_df[] <- lapply(src1_df, as.character)
+key_stats_df <- key_stats_df |>
+    bind_rows(new_rows, src1_df)
+
+```
+
+```{r world_gov_ind_df}
+keep <- c("Control of Corruption: Percentile Rank",
+          "Government Effectiveness: Percentile Rank",
+          "Political Stability and Absence of Violence/Terrorism: Percentile Rank",
+          "Regulatory Quality: Percentile Rank")
+shorten <- c("Corruption Control", "Government Effectiveness", "Political Stability",
+             "Regulatory Quality")
+names(shorten) <- keep
+sel <- c("COUNTRY_NAME", "SERIES_NAME", "X_2022_YR_2022")
+patt <- c("Russian Federation")
+repl <- c("Russia")
+names(repl) <- patt
+world_gov_ind_df <- world_gov_ind_df |>
+    filter(SERIES_NAME %in% keep) |>
+    select(all_of(sel)) |>
+    mutate(SERIES_NAME = str_replace_all(SERIES_NAME, pattern = shorten),
+           COUNTRY_NAME = str_replace_all(COUNTRY_NAME, pattern = repl))
+sources <- sources |>
+    left_join(world_gov_ind_df, by = join_by(Source == COUNTRY_NAME),
+              relationship = "one-to-many")
+colnames(sources) <- c("Source", "Category", "World_Gov_Ind", "Percentile_Rank")
+sources$Percentile_Rank <- round(as.numeric(sources$Percentile_Rank), 2)
+sources <- sources |>
+    mutate(Percentile_Rank_Cat = factor(case_when(is.na(Percentile_Rank) ~ NA,
+                                                  Percentile_Rank < 20 ~ "Very Poor",
+                                                  Percentile_Rank < 40 ~ "Poor",
+                                                  Percentile_Rank < 60 ~ "Okay",
+                                                  Percentile_Rank < 80 ~ "Good",
+                                                  TRUE ~ "Very Good"),
+                                        levels = c("Very Poor", "Poor", "Okay",
+                                                   "Good", "Very Good"),
+                                        exclude = NULL))
+total_sources <- length(unique(sources$Source))
+scores <- c("Poor", "Very Poor")
+poor_very_poor_df <- sources |>
+    filter(Percentile_Rank_Cat %in% scores)
+poor_very_poor_vec <- unique(poor_very_poor_df$Source)
+a <- c("Has Poor/Very Poor WGIs", "19", "38", as.character(round(19 / 38 * 100, 2)))
+b <- c("Does Not Have Poor/Very Poor WGIs", "19", "38",
+       as.character(round(19 / 38 * 100, 2)))
+new_rows <- as.data.frame(rbind(a, b))
+rownames(new_rows) <- NULL
+colnames(new_rows) <- cols
+key_stats_df <- key_stats_df |>
+    bind_rows(new_rows)
+key_stats_df$x <- c(0.1, 0.1, 0.35, 0.35, 0.25, 0.25, 0.5, 0.5)
+key_stats_df$y <- c(0.7, 0.7, 0.85, 0.85, 0.35, 0.35, 0.5, 0.5)
+key_stats_df$Quad <- c(1, 1, 2, 2, 3, 3, 4, 4)
+key_stats_df <- key_stats_df |>
+    mutate(Label = paste0(percent, "%"))
+
+```
+
+```{r visualizations3}
+col <-palette[c(3, 5, 9, 11)]
+fil <- palette[c(3, 5, 9, 11)]
+key_stats_df[,2:4] <- lapply(key_stats_df[,2:4], as.numeric)
+title_str <- "Of the Critical Minerals Identified by the US Geological Survey,"
+cap_str <- "TK"
+show <- c("Very High Dependence", "Has No Ally Source",
+          "China Top Supplier", "Has Poor/Very Poor WGIs")
+p6 <- key_stats_df |>
+    filter(Stat %in% show) |>
+    ggplot(aes(x = x, y = y)) +
+    geom_point(aes(size = as.numeric(percent),
+                   color = as.factor(Quad), fill = as.factor(Quad))) +
+    geom_text(aes(label = Label)) +
+    scale_size(range = c(20, 40)) +
+    scale_fill_manual(values = fil) +
+    scale_color_manual(values = col) +
+    ylim(0, 1) + 
+    xlim(0, 1) +
+    theme_minimal() +
+    theme(legend.position = "none",
+          axis.text = element_blank(),
+          axis.title = element_blank(),
+          panel.grid = element_blank())
+p6
+
+```
