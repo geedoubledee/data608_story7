@@ -16,6 +16,8 @@ library(tidyverse)
 library(snakecase)
 library(RColorBrewer)
 library(janitor)
+library(cowplot)
+library(ggtext)
 
 ```
 
@@ -41,7 +43,7 @@ net_imp_rel_df <- read.csv(my_url2, encoding = "UTF-8")
 #Minerals Security Partnership (MSP): 
 #https://www.state.gov/minerals-security-partnership/#:~:text=The%20United%20States%20was%20joined,bolster%20critical%20mineral%20supply%20chains.
 msp_sources <- c("Australia", "Canada", "Finland", "France", "Germany",
-                 "Japan", "Republic of Korea", "Sweden", "United Kingdom",
+                 "Japan", "South Korea", "Sweden", "United Kingdom",
                  "Europe")
 
 #Belt and Road Initiative (BRI):
@@ -78,10 +80,15 @@ repl <- c("ARSENIC", "GRAPHITE", "NIOBIUM", "TITANIUM (SPONGE)",
           "ANTIMONY", "TITANIUM (MINERAL CONCENTRATES)", "CHROMIUM",
           "TIN", "ZINC", "ALUMINUM (METAL)", "ALUMINUM (BAUXITE)",
           "ALUMINUM (ALUMINA)", "MAGNESIUM (METAL)", "MAGNESIUM (COMPOUNDS)",
-          "ZIRCONIUM", "RARE EARTHS")
+          "ZIRCONIUM", "RARE EARTHS*")
 names(repl) <- patt
+patt2 <- c("Republic of Korea", "United Arab Emirates")
+repl2 <- c("South Korea", "UAE")
+names(repl2) <- patt2
 net_imp_rel_df <- net_imp_rel_df |>
-    mutate(Commodity = str_replace_all(Commodity, pattern = repl))
+    mutate(Commodity = str_replace_all(Commodity, pattern = repl),
+           Major_Import_Sources_2018_2021 = str_replace_all(
+               Major_Import_Sources_2018_2021, pattern = repl2))
 drop <- c("Crit_Min", "crit_min", "Source", "Major_Import_Sources_2018_2021")
 new_cols <- c("Maj_Source_1", "Maj_Source_2", "Maj_Source_3", "Maj_Source_4")
 main_df <- crit_min_df |>
@@ -120,13 +127,16 @@ main_df <- main_df |>
     select(-NET_IMPORT_RELIANCE_PCT_2022) |>
     mutate(NET_IMP_REL_PCT = as.numeric(NET_IMP_REL_PCT),
            DEPENDENCE = factor(case_when(is.na(NET_IMP_REL_PCT) ~ NA,
-                                         NET_IMP_REL_PCT < 25 ~ "Low",
-                                         NET_IMP_REL_PCT < 50 ~ "Medium",
-                                         NET_IMP_REL_PCT < 75 ~ "High",
-                                         NET_IMP_REL_PCT < 100 ~ "Very High",
-                                         TRUE ~ "Complete"),
-                               levels = c("Low", "Medium", "High",
-                                          "Very High", "Complete"),
+                                         NET_IMP_REL_PCT < 25 ~ "Low Dependence",
+                                         NET_IMP_REL_PCT < 50 ~ "Medium Dependence",
+                                         NET_IMP_REL_PCT < 75 ~ "High Dependence",
+                                         NET_IMP_REL_PCT < 100 ~ "Very High Dependence",
+                                         TRUE ~ "Complete Dependence"),
+                               levels = c("Low Dependence",
+                                          "Medium Dependence",
+                                          "High Dependence",
+                                          "Very High Dependence",
+                                          "Complete Dependence"),
                                exclude = NULL)) |>
     arrange(IMPORT_SHARE_RANK, IMPORTED_AS, CRIT_MIN) |>
     filter(!IMPORTED_AS %in% filt)
@@ -140,14 +150,16 @@ sources <- as.data.frame(sources[!is.na(sources)])
 colnames(sources) <- "Source"
 sources <- sources |>
     arrange(Source)
-patt <- c("Russian Federation")
-repl <- c("Russia")
+patt <- c("Russian Federation", "Korea, Rep.", "United Arab Emirates")
+repl <- c("Russia", "South Korea", "UAE")
 names(repl) <- patt
 bri_df <- bri_df |>
     mutate(COUNTRY = str_replace_all(COUNTRY, pattern = repl))
 bri_sources <- c(bri_df$COUNTRY, "China")
 sources <- sources |>
     mutate(Category = case_when(Source %in% msp_sources ~ "Ally",
+                                # note that if a country is in both, the Ally label is
+                                # preferred; this applies to South Korea
                                 Source %in% bri_sources ~ "Competitor",
                                 TRUE ~ "Neutral"))
 
@@ -197,29 +209,32 @@ low_carbon_tech_piv <- low_carbon_tech |>
 ```
 
 ```{r visualizations1}
-palette <- brewer.pal(n = 4, name = "OrRd")
-fil <- palette
+palette <- brewer.pal(n = 12, name = "Paired")
+fil <- palette[3:4]
 title_str <- "Low-Carbon Technologies Rely on Critical Minerals the US Is Very Highly or\nCompletely Dependent on Importing, Endangering a Clean Energy Transition"
 cap_str <- "https://www.worldbank.org/en/topic/extractiveindustries/brief/climate-smart-mining-minerals-for-climate-action"
+incl <- c("Very High Dependence", "Complete Dependence")
 p1 <- low_carbon_tech_piv |>
-    filter(val == 1) |>
+    filter(val == 1 & DEPENDENCE %in% incl) |>
     ggplot() +
     geom_tile(aes(x = reorder(x, COL_TOTAL, decreasing = TRUE),
                   y = reorder(LOW_CARBON_TECHNOLOGY, ROW_TOTAL),
                   fill = DEPENDENCE),
                   col = "white") +
     scale_fill_manual(values = fil) +
-    labs(fill = "Dependence Level",
+    facet_wrap(~LOW_CARBON_TECHNOLOGY, scales = "free_y", ncol = 3, dir = "v") +
+    labs(fill = "",
          title = title_str,
          caption = cap_str) +
-    theme(legend.position = "right",
+    theme(legend.position = "bottom",
           plot.title.position = "plot",
           plot.caption.position = "plot",
           plot.caption = element_text(hjust = 0),
           axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
           axis.title = element_blank(),
           axis.line = element_blank(),
-          axis.ticks = element_blank())
+          axis.ticks = element_blank(),
+          axis.text.y = element_blank())
 p1
 
 ```
@@ -249,111 +264,27 @@ sources_crit_min_piv <- main_df |>
 
 ```
 
-```{r visualizations2}
-palette <- brewer.pal(n = 12, name = "Paired")
-fil <- c(palette[1], palette[7], greys[4])
-title_str <- "TK"
-cap_str <- "TK"
-p2 <- sources_imported_as_piv |>
-    filter(!is.na(src) & DEPENDENCE == "Complete") |>
-    ggplot() +
-    geom_tile(aes(x = src_rank,
-                  y = IMPORTED_AS,
-                  fill = Category),
-                  col = "white") +
-    scale_fill_manual(values = fil) +
-    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
-    labs(title = title_str,
-         caption = cap_str) +
-    theme(legend.position = "top",
-          plot.title.position = "plot",
-          plot.caption.position = "plot",
-          plot.caption = element_text(hjust = 0),
-          axis.title = element_blank(),
-          axis.line = element_blank(),
-          axis.ticks = element_blank())
-p2
-p3 <- sources_imported_as_piv |>
-    filter(!is.na(src) & DEPENDENCE == "Very High") |>
-    ggplot() +
-    geom_tile(aes(x = src_rank,
-                  y = IMPORTED_AS,
-                  fill = Category),
-                  col = "white") +
-    scale_fill_manual(values = fil) +
-    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
-    labs(title = title_str,
-         caption = cap_str) +
-    theme(legend.position = "top",
-          plot.title.position = "plot",
-          plot.caption.position = "plot",
-          plot.caption = element_text(hjust = 0),
-          axis.title = element_blank(),
-          axis.line = element_blank(),
-          axis.ticks = element_blank())
-p3
-p4 <- sources_imported_as_piv |>
-    filter(!is.na(src) & DEPENDENCE == "High") |>
-    ggplot() +
-    geom_tile(aes(x = src_rank,
-                  y = IMPORTED_AS,
-                  fill = Category),
-                  col = "white") +
-    scale_fill_manual(values = fil) +
-    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
-    labs(title = title_str,
-         caption = cap_str) +
-    theme(legend.position = "top",
-          plot.title.position = "plot",
-          plot.caption.position = "plot",
-          plot.caption = element_text(hjust = 0),
-          axis.title = element_blank(),
-          axis.line = element_blank(),
-          axis.ticks = element_blank())
-p4
-p5 <- sources_imported_as_piv |>
-    filter(!is.na(src) & DEPENDENCE == "Medium" | DEPENDENCE == "Low") |>
-    ggplot() +
-    geom_tile(aes(x = src_rank,
-                  y = IMPORTED_AS,
-                  fill = Category),
-                  col = "white") +
-    scale_fill_manual(values = fil) +
-    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
-    labs(title = title_str,
-         caption = cap_str) +
-    theme(legend.position = "top",
-          plot.title.position = "plot",
-          plot.caption.position = "plot",
-          plot.caption = element_text(hjust = 0),
-          axis.title = element_blank(),
-          axis.line = element_blank(),
-          axis.ticks = element_blank())
-p5
-
-```
-
 ```{r key_stats_df}
 drop <- c("IMPORTED_AS")
 key_stats_df <- main_df |>
     select(-all_of(drop)) |>
     distinct(CRIT_MIN, .keep_all = TRUE) |>
+    mutate(DEPENDENCE = case_when(DEPENDENCE == "Very High Dependence" ~ "Very High or Complete Dependence",
+                                  DEPENDENCE == "Complete Dependence" ~ "Very High or Complete Dependence",
+                                  TRUE ~ DEPENDENCE)) |>
     group_by(DEPENDENCE) |>
     summarize(dep_count = n()) |>
     mutate(dep_total = sum(dep_count),
            dep_percent = round(dep_count / dep_total * 100, 2)) |>
-    filter(DEPENDENCE == "Very High" | DEPENDENCE == "Complete")
+    filter(DEPENDENCE == "Very High or Complete Dependence")
 cols <- c("Stat", "count", "total", "percent")
 colnames(key_stats_df) <- cols
-key_stats_df <- key_stats_df |>
-    mutate(Stat = ifelse(Stat == "Very High", "Very High Dependence",
-                         "Complete Dependence"))
 key_stats_df[] <- lapply(key_stats_df, as.character)
 has_ally_source_df <- sources_crit_min_piv |>
     filter(Category == "Ally")
-has_ally_source_vec <- unique(has_ally_source_df$CRIT_MIN)
+has_ally_source_crit_min_vec <- unique(has_ally_source_df$CRIT_MIN)
 a <- c("Has Ally Source", "41", "50", as.character(round(41 / 50 * 100, 2)))
-b <- c("Has No Ally Source", "9", "50", as.character(round(9 / 50 * 100, 2)))
+b <- c("Has No Ally Source", "6", "50", as.character(round(6 / 50 * 100, 2)))
 new_rows <- as.data.frame(rbind(a, b))
 rownames(new_rows) <- NULL
 colnames(new_rows) <- cols
@@ -362,14 +293,121 @@ src1_df <- sources_crit_min_piv |>
     group_by(src) |>
     summarize(src1_count = n()) |>
     mutate(src1_total = sum(src1_count),
-           src1_percent = round(src1_count / src1_total * 100, 2)) |>
+           src1_percent = round(src1_count / src1_total * 100, 2))
+src1_df_can_china_only <- src1_df |>
     filter(src == "Canada" | src == "China") |>
     mutate(src = ifelse(src == "Canada", "Canada Top Supplier",
                          "China Top Supplier"))
-colnames(src1_df) <- cols
-src1_df[] <- lapply(src1_df, as.character)
+colnames(src1_df_can_china_only) <- cols
+src1_df_can_china_only[] <- lapply(src1_df_can_china_only, as.character)
 key_stats_df <- key_stats_df |>
-    bind_rows(new_rows, src1_df)
+    bind_rows(new_rows, src1_df_can_china_only)
+
+```
+
+```{r visualizations2}
+sel <- c("CRIT_MIN", "IMPORTED_AS")
+has_ally_source_df <- has_ally_source_df |>
+    left_join(main_df |> select(sel), relationship = "many-to-one")
+has_ally_source_imp_as_vec <- unique(has_ally_source_df$IMPORTED_AS)
+sources_imported_as_piv <- sources_imported_as_piv |>
+    mutate(Has_Ally_Src = ifelse(IMPORTED_AS %in% has_ally_source_imp_as_vec,
+                                 "Yes", "No"))
+palette <- brewer.pal(n = 12, name = "Paired")
+fil <- c(palette[2], palette[8], greys[6])
+facevec <- rev(c("bold", rep("plain", 11)))
+colvec <- rev(c(palette[6], rep("black", 11)))
+title_md <- "The US completely depends on imports for 12 critical minerals and <span style='color:#E31A1C;'>has no  
+ally sources</span> among its top four suppliers of arsenic"
+cap_str <- "Throughout, 'Ally' includes members of the Minerals Security Partnership, while 'Competitor' includes China and\nthe members of its Belt and Road Initiative. (South Korea is the only source that is a member of both, and it is\nclassified here as 'Ally.') All other sources are labeled 'Neutral.'"
+p2a <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE == "Complete Dependence") |>
+    ggplot(aes(x = src_rank, y = reorder(IMPORTED_AS, desc(IMPORTED_AS)))) +
+    geom_tile(aes(fill = Category), col = "white") +
+    geom_text(aes(label = src), col = "white") +
+    scale_fill_manual(values = fil) +
+    labs(title = title_md,
+         caption = cap_str,
+         fill = "") +
+    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
+    theme(legend.position = "right",
+          plot.title = element_markdown(),
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text.y = element_text(face = facevec, color = colvec))
+facevec <- rev(c("bold", "bold", "plain", "bold", rep("plain", 3),
+                 "bold", "plain", "plain"))
+colvec <- rev(c(palette[6], palette[6], "black", palette[6], rep("black", 3),
+                palette[6], "black", "black"))
+title_md <- "The US depends very highly (75%+) on imports for 23 critical minerals and <span style='color:#E31A1C;'>has no  
+ally sources</span> among its top four suppliers of antimony, barite, chromium, or tin"
+cap_str <- "RARE EARTHS* includes aggregated import data for 14 critical minerals."
+p2b <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE == "Very High Dependence") |>
+    ggplot(aes(x = src_rank, y = reorder(IMPORTED_AS, desc(IMPORTED_AS)))) +
+    geom_tile(aes(fill = Category), col = "white") +
+    geom_text(aes(label = src), col = "white") +
+    scale_fill_manual(values = fil) +
+    labs(title = title_md,
+         caption = cap_str,
+         fill = "") +
+    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
+    theme(legend.position = "right",
+          plot.title = element_markdown(),
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text.y = element_text(face = facevec, color = colvec))
+title_md <- "The US is highly dependent (50%+) on imports for seven critical minerals,  
+none of which are exclusively available from competitors or neutral parties"
+p2c <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE == "High Dependence") |>
+    ggplot(aes(x = src_rank, y = reorder(IMPORTED_AS, desc(IMPORTED_AS)))) +
+    geom_tile(aes(fill = Category), col = "white") +
+    geom_text(aes(label = src), col = "white") +
+    scale_fill_manual(values = fil) +
+    labs(title = title_md,
+         fill = "") +
+    facet_wrap(~ DEPENDENCE, scales = "free_y", ncol = 1) + 
+    theme(legend.position = "right",
+          plot.title = element_markdown(),
+          plot.title.position = "plot",
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank())
+levs <- c("Medium Dependence", "Low Dependence")
+facevec <- rev(c("bold", rep("plain", 2)))
+colvec <- rev(c(palette[6], rep("black", 2)))
+title_md <- "The US is low (<25%) to medium (<50%) dependent on imports for four  
+critical minerals and <span style='color:#E31A1C;'>has no ally sources</span> among its top four suppliers of lithium"
+p2d <- sources_imported_as_piv |>
+    filter(!is.na(src) & DEPENDENCE %in% levs) |>
+    ggplot(aes(x = src_rank, y = reorder(IMPORTED_AS, desc(IMPORTED_AS)))) +
+    geom_tile(aes(fill = Category), col = "white") +
+    geom_text(aes(label = src), col = "white") +
+    scale_fill_manual(values = fil) +
+    labs(title = title_md,
+         fill = "") +
+    facet_wrap(~ factor(DEPENDENCE, levels = levs), scales = "free_y", ncol = 1) + 
+    theme(legend.position = "right",
+          plot.title = element_markdown(),
+          plot.title.position = "plot",
+          axis.title = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text.y = element_text(face = facevec, color = colvec))
+p2a
+p2b
+p2c
+p2d
+
 
 ```
 
@@ -382,8 +420,8 @@ shorten <- c("Corruption Control", "Government Effectiveness", "Political Stabil
              "Regulatory Quality")
 names(shorten) <- keep
 sel <- c("COUNTRY_NAME", "SERIES_NAME", "X_2022_YR_2022")
-patt <- c("Russian Federation")
-repl <- c("Russia")
+patt <- c("Russian Federation", "Korea, Rep.", "United Arab Emirates")
+repl <- c("Russia", "South Korea", "UAE")
 names(repl) <- patt
 world_gov_ind_df <- world_gov_ind_df |>
     filter(SERIES_NAME %in% keep) |>
@@ -416,31 +454,35 @@ b <- c("Does Not Have Poor/Very Poor WGIs", "19", "38",
 new_rows <- as.data.frame(rbind(a, b))
 rownames(new_rows) <- NULL
 colnames(new_rows) <- cols
+rem <- c("Has Ally Source", "Canada Top Supplier", "Does Not Have Poor/Very Poor WGIs")
 key_stats_df <- key_stats_df |>
-    bind_rows(new_rows)
-key_stats_df$x <- c(0.1, 0.1, 0.35, 0.35, 0.25, 0.25, 0.5, 0.5)
-key_stats_df$y <- c(0.7, 0.7, 0.85, 0.85, 0.35, 0.35, 0.5, 0.5)
-key_stats_df$Quad <- c(1, 1, 2, 2, 3, 3, 4, 4)
+    bind_rows(new_rows) |>
+    filter(!Stat %in% rem)
+key_stats_df$x <- c(0.3, 0.7, 0.1, 0.6)
+key_stats_df$y <- c(0.8, 0.65, 0.4, 0.25)
+key_stats_df$Quad <- c(1, 2, 3, 4)
 key_stats_df <- key_stats_df |>
     mutate(Label = paste0(percent, "%"))
+key_stats_df$Annotation1 <- c("The US is very highly (76%+)\nor completely (100%) dependent on imports for", "The US has no allies\namong the top four suppliers of", "China is the US's\nnumber one supplier of", NA)
+key_stats_df$Annotation2 <- c("of critical minerals", "of critical minerals", "of critical minerals",
+"of the US's critical mineral sources are countries\nwith Poor or Very Poor World Governance Indicators")
 
 ```
 
 ```{r visualizations3}
-col <-palette[c(3, 5, 9, 11)]
-fil <- palette[c(3, 5, 9, 11)]
+palette <- brewer.pal(n = 8, name = "Dark2")
+col <-palette[1:4]
+fil <- palette[1:4]
 key_stats_df[,2:4] <- lapply(key_stats_df[,2:4], as.numeric)
 title_str <- "Of the Critical Minerals Identified by the US Geological Survey,"
 cap_str <- "TK"
-show <- c("Very High Dependence", "Has No Ally Source",
-          "China Top Supplier", "Has Poor/Very Poor WGIs")
 p6 <- key_stats_df |>
-    filter(Stat %in% show) |>
     ggplot(aes(x = x, y = y)) +
     geom_point(aes(size = as.numeric(percent),
                    color = as.factor(Quad), fill = as.factor(Quad))) +
-    geom_text(aes(label = Label)) +
-    scale_size(range = c(20, 40)) +
+    geom_text(aes(label = Label), fontface = "bold", color = "white",
+              size = 14/.pt) +
+    scale_size(range = c(15, 40)) +
     scale_fill_manual(values = fil) +
     scale_color_manual(values = col) +
     ylim(0, 1) + 
@@ -451,5 +493,150 @@ p6 <- key_stats_df |>
           axis.title = element_blank(),
           panel.grid = element_blank())
 p6
+ggsave("p6.png", plot = p6, scale = 0.8, dpi = 300, device = "png", bg = "transparent")
+
+```
+
+```{r visualizations4}
+palette <- brewer.pal(n = 12, name = "Paired")
+fil <- palette[9:10]
+col <- palette[9:10]
+title_str = "Only three countries other than China are number one US sources of more\nthan one critical mineral, and their numbers are dwarfed in comparison"
+p3 <- src1_df |>
+    filter(!is.na(src) & src1_count > 1) |>
+    mutate(highlight = as.factor(ifelse(src == "China", 1, 0))) |>
+    ggplot(aes(x = reorder(src, desc(src1_count)))) +
+    geom_col(aes(fill = highlight, y = src1_count, color = highlight)) +
+    geom_text(aes(label = src1_count, y = src1_count, color = highlight),
+              vjust = -0.75, size = 4, fontface = "bold") +
+    geom_text(aes(label = src), y = 0, color = "white",
+              vjust = -0.75, size = 4, fontface = "bold") +
+    scale_y_continuous(limits = c(0, 27), breaks = seq(0, 24, 3)) +
+    scale_fill_manual(values = fil) +
+    scale_color_manual(values = col) +
+    labs(y = "",
+         x = "",
+         title = title_str) +
+    theme(legend.position = "none",
+          plot.title.position = "plot",
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text.x = element_blank(),
+          panel.grid.major.y = element_line(color = greys[3], size = 0.25,
+                                            linetype = 1))
+p3
+
+```
+
+```{r sources_sum}
+sources_sum <- sources |>
+    filter(Source != "Europe") |>
+    group_by(Category, World_Gov_Ind, Percentile_Rank_Cat) |>
+    summarize(n = n()) |>
+    group_by(Category, World_Gov_Ind) |>
+    mutate(tot = sum(n),
+           perc = round(n / tot * 100, 1),
+           lab = ifelse(perc > 5, paste0(format(perc, nsmall = 0), "%"), NA),
+           col = ifelse(Percentile_Rank_Cat == "Okay", "black", "white"))
+
+```
+
+```{r visualizations5}
+palette <- brewer.pal(n = 11, name = "RdYlBu")
+fil <- palette[c(6, 8, 10)]
+col <- c("black", "white")
+allies <- unique(sources |> filter(Category == "Ally") |> select(Source))
+allies <- paste(as.character(unlist(allies)), collapse = ", ")
+competitors <- unique(sources |> filter(Category == "Competitor") |> select(Source))
+competitors <- as.character(unlist(competitors))
+competitors1 <- paste(competitors[1:11], collapse = ", ")
+competitors2 <- paste(competitors[12:22], collapse = ", ")
+neutrals <- unique(sources |> filter(Category == "Neutral") |> select(Source))
+neutrals <- paste(as.character(unlist(neutrals)), collapse = ", ")
+title_str = "Ally sources of critical minerals score relatively well on the World Bank's\ngovernance indicators"
+cap_str = paste0("Ally sources include: ", allies)
+p4a <- sources_sum |>
+    filter(Category == "Ally") |>
+    ggplot(aes(x = World_Gov_Ind, y = perc, group = Percentile_Rank_Cat,
+               color = Percentile_Rank_Cat, fill = Percentile_Rank_Cat)) +
+    geom_col(position = "stack", lwd = 1.5, color = "white") +
+    geom_text(aes(label = lab, color = col), position = position_stack(vjust = 0.5),
+              size = 3, fontface = "bold") +
+    scale_fill_manual(values = fil, guide = guide_legend(reverse = TRUE)) +
+    scale_color_manual(values = col, guide = "none") +
+    scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 10)) +
+    facet_grid(World_Gov_Ind ~ Category, scales = "free_y") +
+    theme(legend.position = "top",
+          legend.title = element_blank(),
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.line = element_blank(),
+          axis.text.x = element_blank(),
+          strip.text.y.right = element_blank(),
+          axis.ticks = element_blank()) + 
+    labs(x = "",
+         y = "",
+         title = title_str,
+         caption = cap_str) +
+    coord_flip()
+p4a
+title_str = "In contrast, many competitor sources of critical minerals score relatively poorly on the\nWorld Bank's governance indicators"
+cap_str = paste0("Competitor sources include: ", competitors1, ",\n", competitors2)
+fil <- palette[c(2, 4, 6, 8, 10)]
+p4b <- sources_sum |>
+    filter(Category == "Competitor") |>
+    ggplot(aes(x = World_Gov_Ind, y = perc, group = Percentile_Rank_Cat,
+               color = Percentile_Rank_Cat, fill = Percentile_Rank_Cat)) +
+    geom_col(position = "stack", lwd = 1.5, color = "white") +
+    geom_text(aes(label = lab, color = col), position = position_stack(vjust = 0.5),
+              size = 3, fontface = "bold") +
+    scale_fill_manual(values = fil, guide = guide_legend(reverse = TRUE)) +
+    scale_color_manual(values = col, guide = "none") +
+    scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 10)) +
+    facet_grid(World_Gov_Ind ~ Category, scales = "free_y") +
+    theme(legend.position = "top",
+          legend.title = element_blank(),
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.line = element_blank(),
+          axis.text.x = element_blank(),
+          strip.text.y.right = element_blank(),
+          axis.ticks = element_blank()) + 
+    labs(x = "",
+         y = "",
+         title = title_str,
+         caption = cap_str) +
+    coord_flip()
+p4b
+title_str = "While neutral sources have more mixed scores on the World Bank's\ngovernance indicators"
+cap_str = paste0("Neutral sources include: ", neutrals)
+p4c <- sources_sum |>
+    filter(Category == "Neutral") |>
+    ggplot(aes(x = World_Gov_Ind, y = perc, group = Percentile_Rank_Cat,
+               color = Percentile_Rank_Cat, fill = Percentile_Rank_Cat)) +
+    geom_col(position = "stack", lwd = 1.5, color = "white") +
+    geom_text(aes(label = lab, color = col), position = position_stack(vjust = 0.5),
+              size = 3, fontface = "bold") +
+    scale_fill_manual(values = fil, guide = guide_legend(reverse = TRUE)) +
+    scale_color_manual(values = col, guide = "none") +
+    scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 10)) +
+    facet_grid(World_Gov_Ind ~ Category, scales = "free_y") +
+    theme(legend.position = "top",
+          legend.title = element_blank(),
+          plot.title.position = "plot",
+          plot.caption.position = "plot",
+          plot.caption = element_text(hjust = 0),
+          axis.line = element_blank(),
+          axis.text.x = element_blank(),
+          strip.text.y.right = element_blank(),
+          axis.ticks = element_blank()) + 
+    labs(x = "",
+         y = "",
+         title = title_str,
+         caption = cap_str) +
+    coord_flip()
+p4c
 
 ```
